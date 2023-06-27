@@ -32,6 +32,8 @@ message TemperatureReply {
 message LedRequest {
   uint32 state = 1;
   string ledname =2;
+  string login = 3;
+  string senha = 4;
 }
 
 message LedReply {

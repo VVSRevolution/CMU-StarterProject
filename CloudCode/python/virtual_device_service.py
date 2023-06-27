@@ -8,16 +8,22 @@ import logging
 import grpc
 import iot_service_pb2
 import iot_service_pb2_grpc
+import ssl
 
 # Twin state
 current_temperature = 'void'
 current_light_level = 'void'
 led_state = {'red':0, 'green':0}
-
+seguranca = False
 # Kafka consumer to run on a separate thread
 def consume_temperature():
     global current_temperature
-    consumer = KafkaConsumer(bootstrap_servers=KAFKA_SERVER+':'+KAFKA_PORT)
+    if seguranca:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(certfile='path_to_client_certificate', keyfile='path_to_client_key')
+        consumer = KafkaConsumer(bootstrap_servers=KAFKA_SERVER + ':' + KAFKA_PORT, security_protocol='SSL', ssl_context=ssl_context)
+    else:
+        consumer = KafkaConsumer(bootstrap_servers=KAFKA_SERVER+':'+KAFKA_PORT)
     consumer.subscribe(topics=('temperature'))
     for msg in consumer:
         print ('Received Temperature: ', msg.value.decode())
@@ -26,14 +32,24 @@ def consume_temperature():
 # Kafka consumer to run on a separate thread
 def consume_light_level():
     global current_light_level
-    consumer = KafkaConsumer(bootstrap_servers=KAFKA_SERVER+':'+KAFKA_PORT)
+    if seguranca:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(certfile='path_to_client_certificate', keyfile='path_to_client_key')
+        consumer = KafkaConsumer(bootstrap_servers=KAFKA_SERVER + ':' + KAFKA_PORT, security_protocol='SSL', ssl_context=ssl_context)
+    else:
+        consumer = KafkaConsumer(bootstrap_servers=KAFKA_SERVER+':'+KAFKA_PORT)
     consumer.subscribe(topics=('lightlevel'))
     for msg in consumer:
         print ('Received Light Level: ', msg.value.decode())
         current_light_level = msg.value.decode()
 
 def produce_led_command(state, ledname):
-    producer = KafkaProducer(bootstrap_servers=KAFKA_SERVER+':'+KAFKA_PORT)
+    if seguranca:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(certfile='path_to_client_certificate', keyfile='path_to_client_key')
+        producer = KafkaProducer(bootstrap_servers=KAFKA_SERVER + ':' + KAFKA_PORT, security_protocol='SSL', ssl_context=ssl_context)
+    else:
+        producer = KafkaProducer(bootstrap_servers=KAFKA_SERVER+':'+KAFKA_PORT)
     producer.send('ledcommand', key=ledname.encode(), value=str(state).encode())
     return state
         
@@ -43,12 +59,15 @@ class IoTServer(iot_service_pb2_grpc.IoTServiceServicer):
         return iot_service_pb2.TemperatureReply(temperature=current_temperature)
     
     def BlinkLed(self, request, context):
-        print ("Blink led ", request.ledname)
-        print ("...with state ", request.state)
-        produce_led_command(request.state, request.ledname)
-        # Update led state of twin
-        led_state[request.ledname] = request.state
-        return iot_service_pb2.LedReply(ledstate=led_state)
+        if(request.login == "adm" and request.senha == "123"):
+            print ("Blink led ", request.ledname)
+            print ("...with state ", request.state)
+            produce_led_command(request.state, request.ledname)
+            # Update led state of twin
+            led_state[request.ledname] = request.state
+            return iot_service_pb2.LedReply(ledstate=led_state)
+        else: 
+            return iot_service_pb2.LedReply(ledstate=led_state)
 
     def SayLightLevel(self, request, context):
         return iot_service_pb2.LightLevelReply(lightLevel=current_light_level)
